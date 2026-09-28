@@ -1,0 +1,42 @@
+[
+  {
+    "name": "ZeroMultiplication",
+    "description": "Eliminate multiplication by zero, replacing the entire expression with zero.",
+    "category": "combinational/dataflow",
+    "objective_improvement": "area, power",
+    "pattern": "A * 0 or 0 * A",
+    "template_guidance": "Identify Multiplication operations where one operand is 0. Replace the whole sub-tree with constant 0."
+  },
+  {
+    "name": "SubexpressionElimination",
+    "description": "Extract common subexpressions that are repeated in assignments and assign them to an intermediate wire.",
+    "category": "combinational/dataflow",
+    "objective_improvement": "area, delay",
+    "pattern": "Repeated expressions like (A + B)",
+    "template_guidance": "Identify repeated expression trees in assignment logic. Create a new intermediate wire assignment for the subexpression, and replace original occurrences with the intermediate wire name."
+  },
+  {
+    "name": "ConstantFolding",
+    "description": "Pre-evaluate binary operations where both operands are constants or identify redundant identity operations.",
+    "category": "combinational/dataflow",
+    "objective_improvement": "area",
+    "pattern": "C1 + C2 or A + 0 or A * 1",
+    "template_guidance": "Simplify constant expressions (e.g. 5 + 3 -> 8) or identity operations (e.g. A + 0 -> A, A * 1 -> A)."
+  },
+  {
+    "name": "MuxReduction",
+    "description": "Simplify ternary operators and conditional cases where a constant input/control logic renders branches redundant.",
+    "category": "combinational/dataflow",
+    "objective_improvement": "area, delay",
+    "pattern": "Sel ? A : A or 1 ? A : B or 0 ? A : B",
+    "template_guidance": "If both branches of a ternary selector are identical, replace with the branch expression. If selector is a compile-time constant, replace ternary with the active branch."
+  },
+  {
+    "name": "DeadCodeElimination",
+    "description": "Remove assignments to unused variables and unreachable conditional blocks.",
+    "category": "combinational/dataflow",
+    "objective_improvement": "area",
+    "pattern": "if (0) begin ... end or unused wires",
+    "template_guidance": "Remove always/initial blocks or statements guarded by conditions that evaluate to constant false."
+  }
+]

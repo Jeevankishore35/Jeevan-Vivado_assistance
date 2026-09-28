@@ -1,0 +1,1158 @@
+SymRTLO: Enhancing RTL Code Optimization with
+LLMs and Neuron-Inspired Symbolic Reasoning
+Yiting Wang1,∗ Wanghao Ye1,∗ Ping Guo2,∗ Yexiao He1,∗ Ziyao Wang1
+Bowei Tian1 Shwai He1 Guoheng Sun1 Zheyu Shen1 Sihan Chen3
+Ankur Srivastava1 Qingfu Zhang2 Gang Qu1 Ang Li1
+1University of Maryland, College Park 2City University of Hong Kong 3University of Southern California
+∗Equal contribution †Corresponding author: angli@cs.umd.edu
+Abstract
+Optimizing Register Transfer Level (RTL) code is crucial for improving the effi-
+ciency and performance of digital circuits in the early stages of synthesis. Manual
+rewriting, guided by synthesis feedback, can yield high-quality results but is
+time-consuming and error-prone. Most existing compiler-based approaches have
+difficulty handling complex design constraints. Large Language Model (LLM)-
+based methods have emerged as a promising alternative to address these challenges.
+However, LLM-based approaches often face difficulties in ensuring alignment
+between the generated code and the provided prompts. This paper introduces
+SymRTLO, a neuron-symbolic framework that integrates LLMs with symbolic
+reasoning for the efficient and effective optimization of RTL code. Our method in-
+corporates a retrieval-augmented system of optimization rules and Abstract Syntax
+Tree (AST)-based templates, enabling LLM-based rewriting that maintains syntac-
+tic correctness while minimizing undesired circuit behaviors. A symbolic module is
+proposed for analyzing and optimizing finite state machine (FSM) logic, allowing
+fine-grained state merging and partial specification handling beyond the scope
+of pattern-based compilers. Furthermore, a fast verification pipeline, combining
+formal equivalence checks with test-driven validation, further reduces the complex-
+ity of verification. Experiments on the RTL-Rewriter benchmark with Synopsys
+Design Compiler and Yosys show that SymRTLO improves power, performance,
+and area (PPA) by up to 43.9%, 62.5%, and 51.1%, respectively, compared to the
+state-of-the-art methods.
+1 Introduction
+Register Transfer Level (RTL) optimization is a cornerstone of modern circuit design flows, serving
+as the foundation for achieving optimal Power, Performance, and Area (PPA). As the earliest phase in
+the hardware design lifecycle, RTL development provides engineers with the most significant degree
+of flexibility to explore design patterns, make architectural trade-offs, and influence the overall design
+quality [8]. Engineers use hardware description languages (HDLs) like Verilog to describe circuit
+functionality. At this stage, decisions made have far-reaching implications, as the quality of the RTL
+implementation directly impacts subsequent stages, including synthesis, placement, and routing [ 37].
+A well-optimized RTL not only ensures better design outcomes but also prevents suboptimal designs
+from propagating through the flow, leading to significant inefficiencies and costly iterations [13, 43].
+Despite its importance, RTL optimization remains a challenging and labor-intensive task. Engineers
+must iteratively refine their designs through multiple rounds of synthesis and layout feedback to
+39th Conference on Neural Information Processing Systems (NeurIPS 2025).
+arXiv:2504.10369v2  [cs.AR]  22 Sep 2025ensure functionality and meet stringent PPA targets. This process becomes increasingly cumbersome
+as design complexity grows, with synthesis times scaling disproportionately, often taking hours or
+even days for a single iteration.[ 13] Consequently, designers frequently face numerous synthesis
+cycles to evaluate trade-offs and reach acceptable results. While modern electronic design automation
+(EDA) tools provide compiler-based methods to aid optimization, these approaches are inherently
+limited. [41] They rely heavily on predefined heuristics, making them ill-suited for adapting to
+unconventional design patterns, complex constraints, or dynamic optimization scenarios. As a result,
+the RTL optimization process demands significant expertise and effort.
+Recent advances in artificial intelligence, particularly the advent of large language models (LLMs),
+have introduced a new paradigm for automating and optimizing RTL code. Leveraging the powerful
+generative capabilities of LLMs, researchers have demonstrated their potential to rewrite and optimize
+Verilog code automatically [41]. However, existing LLM-based approaches face critical challenges
+that limit their effectiveness. First, these models often fail to align their generated outputs with
+specified optimization objectives. The inherent limitations in logical reasoning within LLMs can lead
+to deviations from intended transformations, resulting in suboptimal or incorrect outputs. Second,
+despite their potential for automating code generation, current methods still heavily rely on traditional
+synthesis feedback loops for optimization. This reliance results in the inefficiencies of the synthesis
+process, failing to address the core issue of long design cycles.
+Our Proposed Framework.To address the critical challenges in RTL optimization, we introduce
+SymRTLO, the first neuron-symbolic system that seamlessly integrates LLMs with symbolic reason-
+ing to optimize RTL code. SymRTLO significantly reduces the reliance on repeated synthesis tool
+invocations and enhances the alignment of LLM-generated results with intended optimization rules.
+Designing such a system introduces significant challenges, which we address through the integration
+of carefully designed modules. The first challenge lies in thegeneralizationof optimization rules.
+Traditionally, optimization patterns are scattered across code samples, books, and informal notes,
+making it difficult for compiler-based methods to formalize or apply them effectively. SymRTLO
+tackles this by employing an LLM-based rule extraction system, combined with a retrieval-augmented
+generation (RAG) mechanism and a search engine. This ensures that optimization rules are not only
+generalized but also efficiently retrievable from a robust library built from diverse sources.
+Another critical challenge is thealignmentof LLM-generated RTL code with the intended transfor-
+mations, as LLMs often struggle to produce outputs that strictly adhere to the specified optimization
+objective, leading to unreliable and unexplainable results. To ensure alignment, SymRTLO employs
+Abstract Syntax Tree (AST)-based templates, which guide the LLM to generate code that satisfies
+syntactic and semantic correctness. For complex control flows or edge cases that exceed the capabili-
+ties of AST templates, the framework utilizes a symbolic generation module, designed to handle such
+scenarios dynamically while maintaining optimization quality.
+In addition to alignment,conflictsoften arise when different design patterns are required to meet
+distinct PPA goals. To address this, SymRTLO introduces a goal-oriented approach, where each
+optimization rule is explicitly tied to its intended objective. This enables selective application based
+on user-defined optimization goals, efficiently balancing these conflicts to deliver optimized designs
+without disproportionately compromising PPA metrics.
+Verificationin traditional RTL workflows demands significant manual effort for test case development.
+To address this, SymRTLO integrates an automated test case generator, streamlining verification while
+ensuring functional correctness.
+Our key contributions are summarized as follows:
+• LLM Symbolic Optimization: SymRTLO, the first framework to combine LLM-based
+rewriting with symbolic reasoning for RTL optimization.
+• Data Path and Control Path Optimization: SymRTLO addresses critical challenges in
+both traditional EDA compilers and purely LLM-based approaches, particularly by aligning
+generated code with FSM and data path algorithms, balancing conflicting optimization rules,
+and improving explainability.
+• PPA Improvements: SymRTLO demonstrates its efficacy on industrial-scale and benchmark
+circuits, surpassing manual coding, classical compiler flows (e.g.,Synopsys DC Com-
+piler), and state-of-the-art LLM-based methods, achieving up to 43.9%, 62.5%, and 51.1%
+improvements in power, delay, and area.
+22 Background and Motivation
+LLMs have emerged as powerful tools for RTL design automation, with various approaches being
+developed since 2023. As summarized in Table 1, these approaches fall into three primary categories:
+RTL code generation[ 20, 22, 5, 1],debugging[ 33], andoptimization[ 41]. This growing body of
+research demonstrates the significant potential of LLMs to improve the efficiency and effectiveness
+of EDA workflows. However, RTL code optimization has always been a significant challenge in RTL
+design, even for human experts, as it has the greatest impact on the performance of downstream tasks.
+Challenges in RTL Code Optimization with LLMs.Aligning generated code with intended
+optimization goals is a major challenge in LLM-based RTL optimization. Due to inherent
+randomness, LLMs often produce incomplete, incorrect, or suboptimal results. For exam-
+ple, RTLRewriter [ 41] employs retrieval-augmented prompts and iterative synthesis-feedback
+loops to enhance functional correctness but still struggles with fundamental misalignment be-
+tween generated code and optimization objectives. Additionally, the need for multiple syn-
+thesis rounds significantly increases optimization time as design complexity increases, lim-
+iting the scalability of current LLM-based methods for large industrial-scale designs.
+Table 1: Comparative analysis of LLM-based methods
+for RTL design. ✔ indicates the presence of the feature,
+while✘indicates absence of the feature.
+Category Method Verification Rule Output Conflict
+Capability -Based Alignment Resolution
+Generation
+ChipNeMo [20] ✘ ✘ ✘ ✘
+VeriGen [32] ✘ ✘ ✘ ✘
+VerilogEval [21] ✘ ✘ ✘ ✘
+RTLCoder [22] ✘ ✘ ✘ ✘
+ChipChat [1] ✘ ✘ ✘ ✘
+ChipGPT [5] ✘ ✘ ✘ ✘
+Debug RTLFixer [33] ✔ ✔ ✘ ✘
+Optimization RTLRewriter [41] ✔ ✔ ✘ ✘
+SymRTLO(Ours) ✔ ✔ ✔ ✔
+Current Approaches: Underutilization
+of Knowledge and Manual Verification.
+Traditional RTL design optimization relies
+on established patterns such as subexpres-
+sion elimination [ 27, 9], dead code elim-
+ination [17, 14], strength reduction [ 10],
+algebraic simplification [3, 4], Mux reduc-
+tion [6, 38], and memory sharing [18, 23].
+While these techniques are effective, these
+optimizations typically operate at the gate-
+level netlist, making the relationship be-
+tween optimized output and original RTL
+code less transparent. Additionally, opti-
+mization patterns from design manuals and
+codebases remain underutilized due to the
+lack of a centralized repository, forcing engineers to rely on their expertise rather than automated
+tools. Furthermore, verification requires the creation of test benches and test cases manually, making
+the RTL design flow both time-consuming and error-prone.
+Optimization Conflicts and Limited Compiler Capabilities.Existing compiler-based methods face
+additional challenges, particularly in managingoptimization goal conflictsand handling complex
+patterns. For instance, optimizing for one metric, such as delay, often conflicts with another, such
+as power consumption. Striking the right balance between these competing objectives is crucial,
+especially as trade-offs between power and delay directly impact overall system performance. As
+shown in Table 2, each optimization method has its own specific goal, which often clashes with others.
+Compiler-based methods also lack the flexibility to adapt to such conflicts, limiting their effectiveness
+in optimizing designs with diverse and competing constraints.
+Table 2: Conflicts Between Design Goals & Op-
+timization Patterns.
+Design Pattern Goal Conflict Goal Conflict Design Pattern
+Pipelining Low Timing Low Area Resource Sharing
+Clock Gating Low Power Low Timing Retiming
+Table 3: Performance Comparison Across Dif-
+ferent Approaches.
+Approach # States Time (ns) Power (mW) Area (µm2)
+Baseline 11 0.041 2.250 833.000
+GPT-O1 10 0.041 2.280 993.480
+Optimized 4 0.025 1.170 403.920
+Advancing LLM-based RTL Optimization with Neuro-Symbolic Integration.Recent research
+has shown a growing trend toward combining symbolic reasoning with LLM [40, 36, 7, 12, 11, 35],
+bringing new inspirations for more efficient and reliable LLM-based RTL code optimization with
+better prompt-code alignment. These integrated approaches have seen broad application across
+various fields, from automated theorem proof and knowledge representation to robotics and medical
+diagnostics, demonstrating how the combination of pattern recognition and generative capabilities of
+LLM with the interpretability and logical rigor of symbolic systems can significantly improve the
+alignment between LLM output and the given prompt.
+3IF: LLM 
+recommends 
+Control Flow 
+Optimization
+Data Flow Optimization
+Books
+Code
+Manual
+Input 
+Goal
+Input 
+Code LLM 
+Dispatcher
+Search 
+Engine
+Rules 
+extraction
+AST Templates 
+Description
+Rule descriptions
+Optimization 
+Library
+Template Writing 
+Instructions
+Rule Search 
+Results
+AST Optimization 
+Template Module
+Equivalence 
+Check
+AST-based 
+Optimized 
+Code
+IF: not  functional equivalent
+LLM Code 
+Optimizer 
+Optimized 
+Code
+Equivalence 
+Check
+IF: not  functional equivalent
+Final Output Code
+1
+2
+3
+6
+4RAG System
+IF: not  functional equivalent
+Symbolic 
+Representation
+Symbolic 
+Script
+Equivalence 
+Check
+5
+7 8 109
+11Final Optimization Module
+Optimized 
+Symbolic 
+Results
+Control Flow Optimization
+Figure 1: SymRTLO Architecture.
+Motivation Experiments.To highlight the limitations of current LLM-based RTL optimization, we
+conduct an experiment using state-of-the-art commercial LLM, GPT-O1, to optimize an 11-state FSM
+design. The goal was to minimize and merge unnecessary states to enhance PPA metrics. GPT-O1
+receives a detailed state reduction algorithm to guide the optimization process. We compare its results
+with an optimized design that directly applied the state reduction algorithm. As shown in Table 3,
+GPT-O1 struggles to align its outputs with the algorithm, resulting in an under-optimized FSM with
+minimal state reduction and improvement in PPA. In contrast, algorithm-driven optimization achieves
+significantly better results, highlighting current LLM limitations in complex RTL optimization tasks.
+3 Methodology
+SymRTLO takes a Verilog RTL module as input and optimizes it for specific design goals, such as
+low power, high performance, or reduced area. As illustrated in Figure 1, the workflow begins by
+entering the RTL code and the user-specified optimization goal ( 1 ) into theLLM Dispatcher( 2 ).
+This dispatcher analyzes the input circuit and determines the appropriate optimization path: either
+proceeding solely withData Flow Optimization(§3.2) or incorporatingControl Flow Optimization
+(§3.3) as well, depending on the characteristics of the design. For Data Flow Optimization, a search
+engine with a retrieval-augmented module extracts optimization rules and constructs AST-based
+templates. For Control Flow Optimization, an LLM-driven symbolic system generator performs
+FSM-specific transformations. Finally, theFinal Optimization Module(§3.4) integrates both paths
+and incorporates a verification system to ensure the functional correctness of the optimized design.
+3.1 LLM Dispatcher
+TheLLM Dispatcher( 2 ) receives the input RTL code and the specified optimization goal (e.g.,
+low power) ( 1 ) before any optimization begins. It first summarizes the code and generates potential
+optimization suggestions. These suggestions are then passed to the Retrieval-Augmented Generation
+(RAG) system to identify the relevant optimization rules. Additionally, the Dispatcher evaluates the
+presence of a Finite State Machine (FSM) in the original code to determine whether control flow
+optimization is necessary.
+3.2 Data Flow Optimization
+Data Flow represents the process by which information is propagated, processed, and optimized
+within an RTL design. Effective data flow optimizations improve system efficiency by simplifying
+computations, reducing redundancy, and enhancing PPA metrics. Common techniques include sub-
+expression elimination, constant folding, and resource sharing. The proposed Data Flow Optimization
+Module addresses three key challenges: (1) generalizing diverse optimization patterns into accurate,
+reusable rules; (2) aligning LLM-generated optimizations with functional and logical requirements;
+and (3) resolving conflicts between optimization goals inherent in distinct design patterns.
+Optimization Rule Search EngineOptimization knowledge is often scattered across books,
+lecture notes, codebases, and design manuals, with no generalized repository to serve as a unified
+knowledge base. Furthermore, optimization patterns frequentlyconflictdue to divergent goals,
+for example, power reduction versus performance improvement. To tackle these challenges, we
+4developed a retrieval-augmented generation (RAG) system equipped with an optimization goal-based
+rule extraction module.
+Optimization Library.The RAG system aggregates raw RTL optimization data from sources such
+as lecture notes, manuals, and example designs [34, 31, 28, 26] into a comprehensive knowledge base
+( 3 ). LLMs then summarize and structure these data into an optimization library ( 4 ). Each rule is
+abstracted to include its description, applicable optimization goals (e.g.,area, power, or timing), and
+its category (e.g.,data flow, FSM, MUX, memory, or clock gating). A similarity engine identifies
+overlaps with existing entries, prompting merges or exclusive labels to ensure the scalability of the
+rule library. To align optimization goals with generated outputs, the rules specify detailed instructions
+for constructing AST templates, enabling precise application of optimization patterns. Rules with
+clearly defined requirements include template-writing guidelines, while more abstract rules are stored
+as descriptive text and used directly as optimization prompts. See Appendix C for an example RAG.
+Enforcing Rule Alignment and Resolving ConflictsTo improve the structure and alignment of
+optimization rules, the LLM Dispatcher ( 1 ) provides both a summary of the input RTL code and
+suggestions for potential optimizations. These inputs are passed to the search engine along with
+user-specified optimization goals, performing a similarity search to identify the most relevant rules
+from the RAG system.
+Given the potential for conflicts between optimization goals, it is critical to prevent the inclusion of
+conflicting rules while ensuring no critical optimizations are overlooked. To achieve this balance,
+we employ the elbow method to analyze the similarity scores between the query and the candidate
+rules. This approach identifies a natural cutoff point where adding more rules no longer yields
+significant benefits. Let the similarity scores between the query and candidate rules be ordered as:
+s1 ≥s 2 ≥ · · · ≥s M , where si denotes the similarity score for i-th rule, ordered from highest to
+lowest, andMis the total number of candidates.
+The optimal cutoff indexi∗ is determined by maximizing the difference between consecutive similarity
+scores:i ∗ = arg max
+1≤i<M
+,(s i −s i+1).
+Rules with similarity scores above the threshold τelbow are selected for application. The similarity
+between the query embedding (equery) and the a rule embedding (erule) is computed as shown below:
+sim(equery,e rule) = equery ·e rule
+|equery||erule| ≥τ elbow.(1)
+This method ensures that only the most relevant rules are selected, striking an optimal balance
+between comprehensiveness and precision. The output of the search engine contains two components:
+rules with detailed template-writing instructions ( 7 ) and abstract rules described only by their
+optimization properties ( 6 ).
+AST Template BuildingTo ensure that LLM-generated RTL code aligns with functional and
+logical optimization goals, we enforce rules using AST-based symbolic systems, which have been
+proven to be effective in hardware debugging [33]. Compared to LLM-generated symbolic systems,
+AST-based templates offer several advantages: (1) parsing Verilog into an AST ensures accurate and
+structured design representations; (2) limiting each template to a single optimization goal maintains
+conciseness, facilitating correct generation and application by LLMs; and (3) the modular approach
+allows selection of templates to balance conflicting optimization patterns, enhancing flexibility.
+For rules that include template-writing instructions, we prompt the LLM to generate an AST-based
+template that serves as a general optimization framework ( 8 ). Let A denote the set of all AST
+nodes in the Verilog design, and let the matching condition: Φ :A → {true,false}, determine
+whether a node qualifies for optimization. The process begins by identifying theTarget Node
+Type, such as Always, Instance, Assign or Module Instantiation . For each node of the
+specified type, we apply Φ to decide whether it requires rewriting. Once the target nodes are
+identified, theTransformation Ruleis applied as follows: τ:{a∈ A |Φ(a) =true} − → A,
+where τ replaces the matched node with an optimized AST subtree (e.g.,merging nested if-else
+statements, folding constants, or simplifying expressions; code example see Appendix B). To ensure
+functional correctness, the transformed design undergoes an equivalence check using LLM-generated
+testbenches. If the template passes verification, it is stored in the RAG system as reusable content.
+5RTL 
+Design
+Pyverilog
+AST Construction
+A[0:7]
+AND
+B[0:7]
+NOT
+MUXSHR
+C1[0]
+O[0:7]
+… Y[0:7]
+C2[0]
+Subexpression removal
+Templates
+Critical Path reduction
+Dead code elimination…
+LLM Template 
+selection
+Selected Reconstruct 
+AST based 
+Optimized code
+RAG system
+Feedback loop: Re-select on failed symbolic case
+Figure 2: SymRTLO AST template optimization
+workflow.
+As shown in Figure 2, the RTL design is initially
+interpreted as an AST representation. The RAG
+system provides the LLM with multiple template
+options. Due to the varying optimization goals
+and scenarios, the system avoids relying on a
+fixed sequence of templates. Instead, the LLM
+determines which templates to apply and in what
+order, tailoring the optimization process to the
+design’s specific requirements. To further pre-
+vent conflicts between templates or failures in
+the symbolic system, we introduce afeedback
+loop. This loop allows the LLM to re-select
+templates and adjust its strategy based on prior
+failures, ensuring robustness and adaptability.
+3.3 Control Flow Optimization
+Control Flow, unlike Data Flow’s focus on how information is processed and propagated, defines the
+execution paths and sequencing of operations in RTL designs through finite-state machines (FSMs)
+that capture states, transitions, and outputs. These FSMs are tightly coupled with design constraints
+(i.e.,partial specifications, clock gating, and reset logic), making generic symbolic systems fragile or
+incomplete. Addressing these challenges requires deeper semantic analysis beyond simple pattern
+matching or generic AST templates. To enhance alignment between optimized code and the FSM
+minimization algorithm, we propose a Control Flow Optimization module utilizing an LLM-based
+symbolic system. An FSM can be formally represented as: M= (Q,Σ, δ, q 0, F), where Q is the
+finite set of states, Σ is the input alphabet, δ:Q×Σ→Q is the transition function, q0 ∈Q is the
+initial state, andF⊆Qis the set of accepting states.
+For a partially specified FSM Mp, the transition function is extended to handle non-deterministic
+transitions:δ p :Q×Σ→2 Q,where2 Q represents the power set ofQ.
+Classical minimization algorithms (e.g.,Hopcroft’s [ 15] or Moore’s [24]) are effective for fully
+specified deterministic FSMs but are limited by real-world complexities. Practical RTL designs often
+integrate control logic with data path constraints, and undefined states and transitions make FSM
+minimization an NP-complete problem with a general complexity of O(2|Q|). A single pre-built
+AST script cannot efficiently handle all such partial specifications. Let ϕ:Q×D→B represent
+the data path constraints, where D is the data path state space and B is the boolean domain. Pure
+FSM-focused AST-based optimization scripts can overlook these data path side effects, failing to
+capture deeper control semantics.
+RTL 
+Design
+21 3
+5 64
+[2]
+[4] [6]
+a
+b
+a,b
+LLM 
+Transform
+LLM 
+Symbolic 
+System 
+Transformed Symbolic 
+Representation
+[1,3,5]
+Optimized Symbolic 
+Representation
+a a
+a
+a a,b
+bb
+b
+b b
+b
+a
+a
+b
+a
+Figure 3:SymRTLOFSM optimization workflow.
+Inspired by [16], we propose leveraging LLMs
+to transform each circuit into a symbolic repre-
+sentation focused solely on FSM components,
+i.e.,isolating states, transitions, and relevant out-
+puts, as illustrated in Figure 3. Instead of re-
+lying on a one-size-fits-all script, we prompt
+the LLM to dynamically generate aspecial-
+ized minimization scripttailored to the spe-
+cific FSM structure and constraints. We show
+an example workflow in Appendix A.
+3.4 Verification and Final Optimization
+To address the challenges of manual verification and unreliable automated methods, we introduce an
+automated verification module that integrates functionality testing and formal equivalence checking.
+After AST-based optimization and the LLM-assisted symbolic system generate initial results, the
+LLM combines extracted rules, template-optimized code, and symbolic outputs to produce the final
+optimized RTL design ( 11 ). Verification is essential to ensure correctness, as LLM-generated
+rewrites may introduce unintended behavioral deviations. We employ a two-step verification pipeline:
+(1) the LLM generates test benches to validate basic functional correctness, acting as a rapid filter to
+reject invalid rewrites early; and (2) for designs that pass initial tests, we perform formal equivalence
+6checking to formally confirm functional equivalence to the original design. For combinational
+logic and straightforward synchronous sequential circuits, we apply standard Boolean Satisfiability
+Problem (SAT)-based equivalence checking. While more complex designs like asynchronous resets,
+CDC paths, or retimed logic, we employ advanced sequential equivalence checking with robust state
+matching and transformation-tolerant verification techniques.
+4 Experiments
+4.1 Experimental Setup
+BaselineWe compare SymRTLO with several state-of-the-art LLM and open source RTL optimiza-
+tion frameworks. The LLM baselines include GPT-O1, GPT-4o, GPT-4[ 25], GPT-3.5[42], and
+GPT-4o-mini. Additionally, we include two specialized open-source LLM-based tools: Verigen[32]
+and RTL-Coder-Deepseek [22]. For a comprehensive evaluation, we analyze SymRTLO performance
+using circuits from the RTLRewriter Benchmark. Although the RTLRewriter environment is repro-
+ducible using Yosys [39] for wires and cells analysis, the exact test case they use is not provided.
+Moreover, comparing PPA results is even more challenging due to its reliance on Yosys + ABC
+[2]with unknown libraries. To demonstrate SymRTLO’s capabilities, we subject it to a broader eval-
+uation scope, selecting examples that are diverse in size and functionality, while including cases
+reported in RTLRewriter’s benchmark for direct comparison.
+ImplementationsThe SymRTLO framework takes GPT-4o as its primary LLM for optimization
+strategy selection, symbolic system generation, and iterative HDL synthesis, leveraging its robust
+inference, low inference cost, and coding capabilities. While the framework is model-agnostic by
+design, alternatives like GPT-3.5 and GPT-O1 were excluded after preliminary tests showed poor
+results—GPT-3.5 lacked sufficient coding capability, and GPT-O1 incurred high latency and API
+costs, reducing overall efficiency. Pyverilog [30] is used for AST extraction and code reconstruction.
+To efficiently retrieve relevant transformation templates and knowledge, we integrate OpenAI’s text
+embedding-3-small, which excels in embedding-based retrieval tasks. For hardware compilation and
+validation, we use a combination of open-source and commercial tools. Yosys measures wires and
+cells, while Synopsys DC Compiler 2019 [29], paired with the Synopsys Standard Cell (SSC) library,
+performs PPA analysis. GPT-4o generates test benches for functional coverage. Yosys + ABC serves
+as the logical equivalence checker, while Synopsys Formality for sequential equivalence checking.
+For a fair comparison with standard compiler workflows, we apply typical Synopsys DC Compiler
+optimizations, using medium mapping effort and incremental mapping to reflect common practices.
+Evaluation MetricsFirst, to evaluate generation quality and functional correctness, we use the
+pass@k metric commonly employed in code generation tasks. This metric captures the probability
+that at least one valid solution exists within the top k generations: pass@k= 1
+N
+PN
+i=0(1−
+Ck
+ni −ci
+Ckni
+),
+where N is the number of problems, ni and ci represent the total and correct samples for the i-th
+problem, respectively. Second, to test the performance of the synthesis results, we use the best results
+of the 10 valid generations of each model and our method. This sampling maintains token budget
+fairness, as SymRTLO with GPT-4o averages 7,728 tokens across all circuits, while the base GPT-4o
+model uses approximately 775 tokens per generation—a 10× difference.
+For smaller benchmarks, we evaluate optimization results using Wires and Cells metrics, which reflect
+low-level physical characteristics of circuits. These metrics provide granular insights into routing
+complexity (wires) and logical component count (cells), offering a precise evaluation for isolated
+modules or blocks. For larger designs, we focus on PPA metrics to capture high-level efficiency and
+real-world applicability. These metrics offer a holistic view of resource usage and performance for
+complex designs, where low-level metrics like Wires and Cells become impractical.
+4.2 Functional Correctness Analysis
+Table 4: Pass Rate Results.
+Method Pass@1 Pass@5 Pass@10
+Ours97.5 100.0 100.0
+GPT-4o 45.9 60.0 72.7
+GPT-4-Turbo 42.9 62.7 81.8
+GPT-4o-mini 2.5 10.9 12.7
+GPT-3.5-Turbo 28.6 42.7 54.5
+RTL-Coder DeepSeek 8.8 18.2 27.3
+Verigen-2B 0.0 0.0 0.0
+Verigen-16B 0.0 0.0 0.0
+To demonstrate that our method reduces synthesis
+time and improves functional correctness, Table 4
+presents the evaluation results. SymRTLO achieves
+near-perfect first-attempt pass rates, ensuring valid,
+optimized RTL code with maintained functional
+equivalence. This significantly outperforms state-
+of-the-art language models, particularly given the
+complexity of RTL optimization tasks and the ne-
+7Table 5: Comparison of Wire and Cell Counts. Gray highlighting denotes state-of-the-art results.
+GeoMean is the geometric mean of the resource usage (wires or cells). Ratios are calculated by
+dividing the GeoMean by the baseline’s resource usage.†: Reported Results from [41].
+Benchmark Yosys GPT-4-TurboGPT-4o GPT-3.5-TurboGPT-4o-miniRTLCoder-DSRTLrewriter SymRTLO
+Wires CellsWires Cells Wires CellsWires Cells Wires Cells Wires Cells Wires Cells Wires Cells
+adder_subexpression 8 3 73 73 73 73 8 3 73 73
+adder_architecture 86 56 30 40 30 40 96 63 86 56 86 56 - - 14 16
+multiplier_subexpr 26 71 18 15 259 255 26 71 26 71 26 71 - - 18 15
+constant_folding_raw 12 6 10 5 10 5 10 5 10 5 12 6 - - 8 5
+subexpression_elim 17 12 19 12 19 12 19 12 17 10 17 12 - - 14 8
+alu_subexpression 30 24 30 24 28 22 30 24 27 22 30 24 21 18 21 18
+adder_resource 13 3 63 9 4 63 7 3 13 3 - - 63
+multiplier_bitwidth 9 3 83 83 9 3 9 3 9 3 83 83
+multiplier_architect 4 2 14 36 4 2 16 20 18 36 4 2 - - 4 2
+adder_bit_width 4 1 31 31 31 31 4 1 31 31
+loop_tiling_raw 5 16 4 16 4 16 4 16 484 496 5 16 - - 316
+GeoMean15.49 8.96 13.45 9.81 16.35 9.97 16.40 11.49 16.31 11.49 15.49 8.96 - - 9.75 5.95
+Ratio1.00 1.00 0.87 1.10 1.06 1.11 1.06 1.28 1.11 1.31 1.15 0.91 0.69†1 0.77†1 0.63 0.67
+Table 6: FSM Designs PPA Comparison. Gray highlights indicate state-of-the-art results. A ⇓ marks
+improvement, while a ⇑ denotes a decline compare with the original design. Two comparison scenar-
+ios are shown: without compiler optimization (upper improvement) and with compiler optimization
+(lower improvement). A - indicates that no code is available for analysis.
+Model/Method example1_state example2_state example3_state example4_state example5_state
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Original 0.042 1.21833.0 0.056 2.25 549.4 0.052 1.35 589.6 0.055 2.18 597.1 0.055 2.18 597.1
+GPT-3.5 0.043 1.27 870.6 0.056 2.25 549.4 0.052 1.35 589.6 0.059 2.17972.3 0.055 2.18 597.1
+GPT4o-mini 0.055 1.08 1021.1 0.062 2.23 579.2 0.063 1.08 714.9 0.055 2.18 597.1 0.053 2.18 634.7
+GPT-4-Turbo 0.053 2.97 993.5 0.067 2.28 737.6 0.065 1.22 810.3 0.055 2.18 273.5 0.029 2.25 366.8
+GPT-4o 0.053 2.97 1002.5 0.056 2.25 549.4 0.052 1.35 589.6 0.055 2.18 273.5 0.055 2.18 597.1
+GPT-O1 0.044 1.17 910.7 0.056 2.25 549.4 0.052 1.35 589.6 0.055 2.18 597.1 0.055 2.18 597.1
+RTLCoder-DS 0.042 1.21 833.0 0.056 2.25 549.4 0.052 1.35 589.6 0.055 2.18 597.1 0.063 2.34 649.78
+RTLrewriter 0.0253.23 424.0 - - - 0.041 1.36 549.4 - - - - - -
+SymRTLO 0.029 1.21 403.9 0.024 1.17 271.0 0.023 1.15 268.5 0.024 2.17 273.5 0.0262.18 270.9
+Improvement(%) ⇓30.95 0.00⇓51.51⇓57.14⇓48.00⇓50.67⇓55.77⇓14.81⇓54.46⇓56.36⇓0.46⇓54.1952⇓52.73 0.00⇓54.63
+Original + Compiler Opt.0.041 2.85 564.51 0.035 2.24 316.11 0.038 1.23 358.77 0.044 2.19 451.59 0.045 2.19 451.59
+SymRTLO+ Compiler Opt.0.021 2.64 240.85 0.018 0.6 175.61 0.0182.42 180.63 0.020 2.17 185.65 0.0192.27 188.169
+Improvement(%) ⇓48.78⇓7.37⇓57.33⇓48.57⇓73.21⇓44.45⇓52.63⇑96.74⇓49.65⇓54.55⇓0.91⇓58.89⇓57.78⇑3.65⇓58.33
+cessity of maintaining functional equivalence. SymRTLO reduces synthesis iterations, minimizing
+redundant computations throughout the optimization process.
+4.3 Circuit Optimization Performance
+2.5 3.0 3.5
+Time (ns)
+0.70
+0.75
+0.80
+0.85
+0.90
+0.95
+1.00Power (mW)
+Power vs Time
+5000 6000
+Area ( m²)
+0.70
+0.75
+0.80
+0.85
+0.90
+0.95
+1.00Power (mW)
+Power vs Area
+2.5 3.0 3.5
+Time (ns)
+4500
+4750
+5000
+5250
+5500
+5750
+6000
+6250Area ( m²)
+Area vs Time
+Original
+SymRTLO
+GPT-4-Turbo
+GPT-4o
+RTLCoder
+GPT-4o-mini
+GPT-3.5-Turbo
+Figure 4: The PPA overall improvement of benchmark cases.
+To demonstrate SymRTLO’s effective-
+ness in resolving cross-rule conflicts
+and achieving optimization objectives,
+we conduct an experiment presented
+in Figure 4. Given the limited bench-
+marks available for LLM-driven RTL
+design, we analyze our framework on
+RTLRewriter’s benchmark, which pri-
+marily emphasizes area optimization,
+leaving minimal room for improve-
+ments in power and delay. To align
+with this limitation, we put area opti-
+mization as our primary goal. Despite these constraints, SymRTLO achieves substantial improvements,
+averaging 40.96% in power, 17.02% in delay, and 38.05% in area, while maintaining a balanced
+optimization across all three metrics, highlighting its versatility and robustness.
+We present a comprehensive analysis of SymRTLO capabilities using 11 short-benchmark examples
+from RTLRewriter focusing on Wires and Cells optimization, along with 10 complex FSM and
+algorithm examples from both short and long benchmarks. This representative selection demonstrates
+SymRTLO’s scalability and effectiveness across diverse functional domains but also aligns with circuits
+reported in RTLRewriter’s paper, enabling direct comparison with state-of-the-art results.
+Smaller benchmarks requiring only 1-2 optimization patterns provide ideal test cases for LLM output
+alignment. Table 5 shows that SymRTLO consistently outperforms baseline implementations across
+various test cases. With wire and cell ratios of 0.63 and 0.67 respectively, it surpasses the state-of-the-
+art values of 0.69 and 0.77. While models like GPT-4 excel in certain cases, they lack consistency
+across diverse optimization tasks.
+8Table 7: Algorithm Optimizations PPA Comparison. Gray highlights indicate state-of-the-art results.
+A ⇓ marks improvement, while a ⇑ denotes a decline compare with the original design. Two
+comparison scenarios are shown: without compiler optimization (upper improvement) and with
+compiler optimization (lower improvement).
+Model/Method sppm_redundancysubexpression_elimadder_architecture vending fft
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Power
+(mW)
+Time
+(ns)
+Area
+(µm2)
+Original 2.86 7.41 40102.6 5.27 11.09 10989.10.418 2.78 1023.5 7.61 227.86 176982.9858.23 8.26 2255264.75
+GPT-3.5-Turbo 2.86 7.41 40102.6 5.27 11.09 10989.10.418 2.78 1023.5 7.61 227.86 176982.9858.23 8.26 2255264.75
+GPT4o-mini 2.86 7.41 40102.6 5.27 11.09 10989.10.418 2.78 1023.5 7.61 227.86 176982.9858.23 8.26 2255264.75
+GPT-4-Turbo 2.86 7.41 40102.6 3.93 11.09 7783.030.392 2.74 1023.5 7.50 227.86 176982.9858.23 8.26 2255264.75
+GPT-4o 2.86 7.41 40102.6 5.27 11.09 8984.610.392 2.74 1023.5 7.61 227.86 176982.9858.23 8.26 2255264.75
+GPT-O1 1.87 7.41 29919.8 4.63 11.09 8957.230.418 2.78 1023.52 7.61 227.86 176982.9858.23 8.26 2255264.75
+RTLCoder-DS 2.86 7.41 40102.6 5.27 11.09 10989.10.418 2.78 1023.5 7.61 227.86 176982.9858.23 8.26 2255264.75
+SymRTLO 1.77 7.2929606.183.02 2.87 7358.8 0.328 1.97 762.6 6.97227.86164831.131.71 8.09 1726125.71
+Improvement(%) ⇓38.46⇓1.62⇓26.17⇓42.68⇓74.12⇓33.04⇓21.53⇓29.14⇓25.49⇓8.41⇓0⇓6.87 ⇓45.54⇓2.06⇓23.46
+Original + Compiler Opt.1.46 7.95 22908.694.61 11.78 9484.15 0.17 2.29 541.92 11.46 7.90 240079.2951.12 7.90 1857805.49
+SymRTLO+ Compiler Opt.1.46 7.95 22908.693.5311.78 6791.880.17 2.48 531.888.1757.90 151593.8626.328.98 1471378.46
+Improvement(%) 0 0 0 ⇓23.4 0⇓28.39 0⇑8.30⇓1.86 ⇓28.66 0⇓36.86 ⇓48.51⇑13.67⇓20.8
+In FSM PPA experiments, SymRTLO significantly outperforms existing approaches, particularly in
+relation to RTLRewriter, the state-of-the-art solution, achieving an improvement of up to 50.59%,
+12.65%, 53.09% in power, time, and area, respectively. As shown in Table 6, it effectively aligns the
+FSM state reduction algorithm with optimized code, minimizing all FSM states and achieving the
+best overall PPA results. This demonstrates that the LLM-generated symbolic system is both stable
+and aligned with intended optimization goals.
+To evaluate the effectiveness of generalized rules and AST templates in balancing conflicting rules,
+we conduct algorithm case PPA experiments involving complex Data Path and Control Path scenarios.
+As shown in Table 7, SymRTLO applies AST templates, optimized rules, and minimized FSM states,
+achieving 30.34%, 21.37%, and 20.01% improvements in PPA over GPT-4o, our base model, on
+average. Note that RTLRewriter’s results are unavailable for comparison for these cases.
+We test SymRTLO with Synopsys DC optimization workflows with medium mapping effort, incre-
+mental mapping for both FSM and Algorithm cases, as shown in Table 6 and Table 7, demonstrating
+further balanced optimization alongside compiler optimization processes, achieving overall improve-
+ments of 36.2% in power and 35.66% in area, with only an 8.3% increase in time as a trade-off. Even
+under more stringent compiler optimization settings of flattened mode with high mapping effort,
+SymRTLOstill delivers overall improvements of 27.7% in area, 35.8% in power, and 0.5% in delay.
+4.4 Ablation Studies
+Power Timing Area
+PPA Improvement
+20%
+8% 5%
+37%
+2%
+34%31%
+1%
+32%
+41%
+17%
+38%
+1% 1% 0%
+Remove Template-Based Opt
+Remove Symbolic Reasoning
+Remove Goal-Based Search
+SymRTLO
+GPT-4o
+Figure 5: Ablation studies results.
+To assess the effectiveness of individ-
+ual components in SymRTLO, we con-
+duct ablation studies by selectively
+removing one module at a time,i.e.,
+either the AST-based module, FSM
+symbolic system, or goal-based search
+engine, while keeping the rest of the
+system intact. We then analyze the im-
+pact of each removal across test cases,
+measuring the resulting overall PPA
+improvements compared to the base-
+line. Figure 5 summarizes these results, showing that all three components contribute significantly to
+SymRTLO’s overall performance. Removing any one of them results in significant performance degra-
+dation, further emphasizing the necessity of their integration. By contrast, GPT-4o alone achieves
+minimal improvements, underscoring the advantages ofSymRTLO’s tailored framework.
+5 Conclusion
+We present SymRTLO, a neuron-symbolic framework that integrates LLM-based code rewriting and
+symbolic reasoning to optimize both data flow and control flow in RTL designs.SymRTLO general-
+izes optimization rules, aligns generated code with intended transformations, resolves conflicting
+optimization goals, and ensures reliable automated verification. By combining retrieval-augmented
+guidance with symbolic systems, SymRTLO automates complex structural rewrites while maintaining
+functional correctness. Extensive evaluations on industrial-scale designs demonstrate significant PPA
+gains over state-of-the-art solutions.
+9References
+[1] Jason Blocklove, Siddharth Garg, Ramesh Karri, and Hammond Pearce. Chip-chat: Challenges
+and opportunities in conversational hardware design. In5th ACM/IEEE Workshop on Machine
+Learning for CAD, MLCAD. IEEE, 2023.
+[2] R. Brayton and A. Mishchenko. ABC: An academic industrial-strength verification tool. In
+Computer Aided Verification: 22nd International Conference, CAV 2010, Edinburgh, UK, July
+15–19, 2010. Proceedings 22, pages 24–40. Springer, 2010.
+[3] Bruno Buchberger and Rüdiger Loos. Algebraic simplification. InComputer algebra: symbolic
+and algebraic computation, pages 11–43. Springer, 1982.
+[4] Jacques Carette. Understanding expression simplification. InProceedings of the 2004 interna-
+tional symposium on Symbolic and algebraic computation, pages 72–79, 2004.
+[5] Kaiyan Chang, Ying Wang, Haimeng Ren, Mengdi Wang, Shengwen Liang, Yinhe Han, Huawei
+Li, and Xiaowei Li. Chipgpt: How far are we from natural language hardware design.CoRR,
+abs/2305.14019, 2023.
+[6] Deming Chen and Jason Cong. Register binding and port assignment for multiplexer opti-
+mization. InProceedings of the 2004 Asia and South Pacific Design Automation Conference,
+ASP-DAC ’04, page 68–73. IEEE Press, 2004.
+[7] Sihan Chen, Zhuangzhuang Qian, Wingchun Siu, Xingcan Hu, Jiaqi Li, Shawn Li, Yuehan Qin,
+Tiankai Yang, Zhuo Xiao, Wanghao Ye, Yichi Zhang, Yushun Dong, and Yue Zhao. Pyod 2:
+A python library for outlier detection with llm-powered model selection.arXiv, 2412.12154,
+December 2024.
+[8] Pong P Chu.RTL hardware design using VHDL: coding for efficiency, portability, and scalabil-
+ity. John Wiley & Sons, 2006.
+[9] John Cocke. Global common subexpression elimination. InProceedings of a symposium on
+Compiler Optimization, pages 20–24. ACM, 1970.
+[10] Keith D Cooper, L Taylor Simpson, and Christopher A Vick. Operator strength reduction.ACM
+Transactions on Programming Languages and Systems (TOPLAS), 23(5):603–625, 2001.
+[11] Revathy Venkataramanan Deepa Tilwani and Amit P. Sheth. Neurosymbolic ai approach to
+attribution in large language models.arXiv, 2410.03726, September 2024. Paper under review.
+[12] Stefano Teso Diego Calanzone and Antonio Vergari. Logically consistent language models via
+neuro-symbolic integration.arXiv, 2409.13724, September 2024.
+[13] Wenji Fang, Yao Lu, Shang Liu, Qijun Zhang, Ceyu Xu, Lisa Wu Wills, Hongce Zhang, and
+Zhiyao Xie. Masterrtl: A pre-synthesis ppa estimation framework for any rtl design. In2023
+IEEE/ACM International Conference on Computer Aided Design (ICCAD), pages 1–9, 2023.
+[14] Rajiv Gupta, DA Benson, and Jesse Zhixi Fang. Path profile guided partial dead code elimination
+using predication. InProceedings 1997 International Conference on Parallel Architectures and
+Compilation Techniques, pages 102–113. IEEE, 1997.
+[15] John E Hopcroft and Jeffrey D Ullman.Formal languages and their relation to automata.
+Addison-Wesley Longman Publishing Co., Inc., 1969.
+[16] Yi Hu, Haotong Yang, Zhouchen Lin, and Muhan Zhang. Code prompting: a neural symbolic
+method for complex reasoning in large language models, 2023.
+[17] Jens Knoop, Oliver Rüthing, and Bernhard Steffen. Partial dead code elimination.ACM Sigplan
+Notices, 29(6):147–158, 1994.
+[18] Charles Eric LaForest and J. Gregory Steffan. Efficient multi-ported memories for fpgas. In
+Proceedings of the 18th Annual ACM/SIGDA International Symposium on Field Programmable
+Gate Arrays (FPGA ’10), pages 41–50, Monterey, CA, USA, 2010. ACM.
+10[19] P. Langley. Crafting papers on machine learning. In Pat Langley, editor,Proceedings of the
+17th International Conference on Machine Learning (ICML 2000), pages 1207–1216, Stanford,
+CA, 2000. Morgan Kaufmann.
+[20] Mingjie Liu, Teodor-Dumitru Ene, Robert Kirby, Chris Cheng, Nathaniel Ross Pinckney,
+Rongjian Liang, Jonah Alben, Himyanshu Anand, Sanmitra Banerjee, Ismet Bayraktaroglu,
+Bonita Bhaskaran, Bryan Catanzaro, Arjun Chaudhuri, Sharon Clay, Bill Dally, Laura Dang,
+Parikshit Deshpande, Siddhanth Dhodhi, Sameer Halepete, Eric Hill, Jiashang Hu, Sumit Jain,
+Brucek Khailany, Kishor Kunal, Xiaowei Li, Hao Liu, Stuart F. Oberman, Sujeet Omar, Sreedhar
+Pratty, Jonathan Raiman, Ambar Sarkar, Zhengjiang Shao, Hanfei Sun, Pratik P. Suthar, Varun
+Tej, Kaizhe Xu, and Haoxing Ren. Chipnemo: Domain-adapted llms for chip design.CoRR,
+abs/2311.00176, 2023.
+[21] Mingjie Liu, Nathaniel Ross Pinckney, Brucek Khailany, and Haoxing Ren. Invited paper:
+Verilogeval: Evaluating large language models for verilog code generation. InIEEE/ACM
+International Conference on Computer Aided Design, ICCAD. IEEE, 2023.
+[22] Shang Liu, Wenji Fang, Yao Lu, Jing Wang, Qijun Zhang, Hongce Zhang, and Zhiyao Xie.
+Rtlcoder: Fully open-source and efficient llm-assisted rtl code generation technique.IEEE
+Transactions on Computer-Aided Design of Integrated Circuits and Systems, 2024.
+[23] Jiacheng Ma, Gefei Zuo, Kevin Loughlin, Xiaohe Cheng, Yanqiang Liu, Abel Mulugeta
+Eneyew, Zhengwei Qi, and Baris Kasikci. A hypervisor for shared-memory fpga platforms.
+InProceedings of the Twenty-Fifth International Conference on Architectural Support for
+Programming Languages and Operating Systems, pages 827–844, 2020.
+[24] Edward F Moore et al. Gedanken-experiments on sequential machines.Automata studies,
+34:129–153, 1956.
+[25] OpenAI, Josh Achiam, Steven Adler, Sandhini Agarwal, , and many others. Gpt-4 technical
+report.arXiv, 2303.08774, March 2023.
+[26] Samir Palnitkar.Verilog HDL: a guide to digital design and synthesis, volume 1. Prentice Hall
+Professional, 2003.
+[27] R. Pasko, P. Schaumont, V . Derudder, S. Vernalde, and Daniela Duracková. A new algorithm
+for elimination of common subexpressions.Computer-Aided Design of Integrated Circuits and
+Systems, IEEE Transactions on, 18:58 – 68, 02 1999.
+[28] Jim Schultz. Optimizing the rtl design flow with real-time ppa analysis.Synopsys Silicon to
+Systems Blog, N/A, March 2023. Blog Post. URL: https://www.synopsys.com/blogs/silicon-to-
+systems/optimizing-rtl-design-flow-real-time-ppa-analysis/ (Accessed January 26, 2025).
+[29] Synopsys. Dc ultra for synthesis and test. https://www.synopsys.com/
+implementation-and-signoff/rtl-synthesis-test/dc-ultra.html.
+[30] Shinya Takamaeda-Yamazaki. Pyverilog: A python-based hardware design processing toolkit
+for verilog hdl. InApplied Reconfigurable Computing, volume 9040 ofLecture Notes in
+Computer Science, pages 451–460. Springer International Publishing, Apr 2015.
+[31] Vaibbhav Taraate.Digital logic design using verilog. Springer, 2022.
+[32] Shailja Thakur, Baleegh Ahmad, Hammond Pearce, Benjamin Tan, Brendan Dolan-Gavitt,
+Ramesh Karri, and Siddharth Garg. Verigen: A large language model for verilog code generation.
+ACM Trans. Design Autom. Electr. Syst., 2024.
+[33] Yunda Tsai, Mingjie Liu, and Haoxing Ren. Rtlfixer: Automatically fixing RTL syntax
+errors with large language model. InProceedings of the 61st ACM/IEEE Design Automation
+Conference, DAC. ACM, 2024.
+[34] Frank Vahid. Digital design with rtl design, vhdl, and verilog (2nd edition).John Wiley & Sons
+Inc, 2, January 2010. ISBN-13: 978-0470531082, 575 pages.
+11[35] Zishen Wan, Che-Kai Liu, Hanchen Yang, Ritik Raj, Chaojian Li, Haoran You, Yonggan Fu,
+Cheng Wan, Sixu Li, Youbin Kim, Ananda Samajdar, Yingyan Celine Lin, Mohamed Ibrahim,
+Jan M. Rabaey, Tushar Krishna, and Arijit Raychowdhury. Cross-layer design for neuro-
+symbolic ai: From workload characterization to hardware acceleration.arXiv, 2409.13153,
+September 2024. Available at https://arxiv.org/abs/2409.13153.
+[36] Zishen Wan, Che-Kai Liu, Hanchen Yang, Ritik Raj, Chaojian Li, Haoran You, Yonggan Fu,
+Cheng Wan, Sixu Li, Youbin Kim, Ananda Samajdar, Yingyan Celine Lin, Mohamed Ibrahim,
+Jan M. Rabaey, Tushar Krishna, and Arijit Raychowdhury. Towards efficient neuro-symbolic ai:
+From workload characterization to hardware architecture.arXiv, 2409.13153, September 2024.
+Published in IEEE Transactions on Circuits and Systems for Artificial Intelligence (TCASAI),
+2024.
+[37] Laung-Terng Wang, Yao-Wen Chang, and Kwang-Ting Tim Cheng.Electronic design automa-
+tion: synthesis, verification, and test. Morgan Kaufmann, 2009.
+[38] Zicheng Wang, Hailong You, Jie Wang, Meihua Liu, Yu Su, and Yong Zhang. Optimization
+of multiplexer combination in rtl logic synthesis. InProceedings of the 2023 International
+Symposium of Electronics Design Automation (ISEDA), page N/A. IEEE, May 2023.
+[39] Clifford Wolf, Johann Glaser, and Johannes Kepler. Yosys-a free verilog synthesis suite. In
+Proceedings of the Forum on Specification and Design Languages (FDL), 2013. Yosys is
+the first open-source Verilog synthesis suite supporting a wide range of synthesizable Verilog
+features.
+[40] Sen Yang, Xin Li, Leyang Cui, Lidong Bing, and Wai Lam. Neuro-symbolic integration brings
+causal and reliable reasoning proofs.arXiv, 2311.09802, November 2023. Code available at
+this URL.
+[41] Xufeng Yao, Yiwen Wang, Xing Li, Yingzhao Lian, Chen Ran, Lei Chen, Mingxuan Yuan,
+Hong Xu, and Bei Yu. Rtlrewriter: Methodologies for large models aided rtl code optimization,
+09 2024.
+[42] Junjie Ye, Xuanting Chen, Nuo Xu, Can Zu, Zekai Shao, Shichun Liu, Yuhan Cui, Zeyang Zhou,
+Chao Gong, Yang Shen, Jie Zhou, Siming Chen, Tao Gui, Qi Zhang, and Xuanjing Huang. A
+comprehensive capability analysis of gpt-3 and gpt-3.5 series models, 2023.
+[43] Haifeng Zhou, Zhenghui Lin, and Wei Cao. Research on vhdl rtl synthesis system. In
+Proceedings First IEEE International Workshop on Electronic Design, Test and Applications
+’2002, pages 99–103, 2002.
+12A FSM Symbolic System
+The following section demonstrates an example FSM in verilog. First the verilog is transformed to
+Symbolic Representation, then the Symbolic system applied minimization algorithm to optimize the
+FSM.
+1module example(
+2input wire clk,
+3input wire reset,
+4input wire [1:0] input_signal,
+5output reg output_signal);
+6parameter S0 = 3'b000,S1 = 3'b001,S2 = 3'b010,S3 = 3'b011,S4 = 3'b100,S5 =
+3'b101;,→
+7reg [2:0] current_state, next_state;
+8always @(current_state) begin
+9output_signal = 0;
+10case (current_state)
+11S0: output_signal = 1;
+12S2: output_signal = 1;
+13S4: output_signal = 1;
+14default: output_signal = 0;
+15endcase
+16end
+17always @(posedge clk or posedge reset) begin
+18if (reset) begin
+19current_state <= S0;// Reset to state S0
+20end else begin
+21current_state <= next_state;
+22end
+23end
+24always @(*) begin
+25next_state = current_state;
+26case (current_state)
+27S0: case (input_signal)
+282'b00: next_state = S0;
+292'b01: next_state = S1;
+302'b10: next_state = S2;
+312'b11: next_state = S3;
+32endcase
+33S1: case (input_signal)
+342'b00: next_state = S0;
+352'b01: next_state = S3;
+362'b11: next_state = S5;
+37endcase
+38S2: case (input_signal)
+392'b00: next_state = S1;
+402'b01: next_state = S3;
+412'b10: next_state = S2;
+422'b11: next_state = S4;
+43endcase
+44S3: case (input_signal)
+452'b00: next_state = S1;
+462'b01: next_state = S0;
+472'b10: next_state = S4;
+482'b11: next_state = S5;
+49endcase
+50S4: case (input_signal)
+512'b00: next_state = S0;
+522'b01: next_state = S1;
+532'b10: next_state = S2;
+542'b11: next_state = S5;
+55endcase
+56S5: case (input_signal)
+572'b00: next_state = S1;
+582'b01: next_state = S4;
+592'b10: next_state = S0;
+60endcase
+61endcase
+62end
+63endmodule
+Listing 1:Example Test Case: example1_state.
+131'states': ['S0','S1','S2','S3','S4','S5'],
+2'transitions': {
+3'S0': {
+4'input_signal=00': {'next_state':'S0'},
+5'input_signal=01': {'next_state':'S1'},
+6'input_signal=10': {'next_state':'S2'},
+7'input_signal=11': {'next_state':'S3'}
+8},
+9'S1': {
+10'input_signal=00': {'next_state':'S0'},
+11'input_signal=01': {'next_state':'S3'},
+12'input_signal=11': {'next_state':'S5'}
+13},
+14'S2': {
+15'input_signal=00': {'next_state':'S1'},
+16'input_signal=01': {'next_state':'S3'},
+17'input_signal=10': {'next_state':'S2'},
+18'input_signal=11': {'next_state':'S4'}
+19},
+20'S3': {
+21'input_signal=00': {'next_state':'S1'},
+22'input_signal=01': {'next_state':'S0'},
+23'input_signal=10': {'next_state':'S4'},
+24'input_signal=11': {'next_state':'S5'}
+25},
+26'S4': {
+27'input_signal=00': {'next_state':'S0'},
+28'input_signal=01': {'next_state':'S1'},
+29'input_signal=10': {'next_state':'S2'},
+30'input_signal=11': {'next_state':'S5'}
+31},
+32'S5': {
+33'input_signal=00': {'next_state':'S1'},
+34'input_signal=01': {'next_state':'S4'},
+35'input_signal=10': {'next_state':'S0'}
+36}
+37},
+38'outputs': {'S0': {'output_signal': 1},
+39'S1': {'output_signal': 0},
+40'S2': {'output_signal': 1},
+41'S3': {'output_signal': 0},
+42'S4': {'output_signal': 1},
+43'S5': {'output_signal': 0} }
+Listing 2:LLM-generated symbolic representation for example1_state.
+1State: S2, Output: 1
+2input_signal=00 -> S1
+3input_signal=01 -> S3_S5
+4input_signal=10 -> S2
+5input_signal=11 -> S0_S4
+6State: S0_S4, Output: 1
+7input_signal=00 -> S0_S4
+8input_signal=01 -> S1
+9input_signal=10 -> S2
+10input_signal=11 -> S3_S5
+11State: S1, Output: 0
+12input_signal=00 -> S0_S4
+13input_signal=01 -> S3_S5
+14input_signal=10 -> S1
+15input_signal=11 -> S3_S5
+16State: S3_S5, Output: 0
+17input_signal=00 -> S1
+18input_signal=01 -> S0_S4
+19input_signal=10 -> S0_S4
+20input_signal=11 -> S3_S5
+Listing 3:Reduced states of example1_state.
+14B AST Template
+The following section demonstrate how applying AST templates transforms the code and apply
+optimization patterns.
+1module example_raw
+2#( parameter BW = 8)
+3(
+4input [BW-1:0] a,
+5input [BW-1:0] b,
+6input [BW-1:0] c,
+7input [BW-1:0] d,
+8output [BW-1:0] s1
+9);
+10assign s2 = a * b;
+11assign s3 = a % b +d;
+12assign s4 = c + d + b * a;
+13assign s5 = a - b;
+14assign s6 = (b + 1) * a + d + c -b;
+15assign s1 = a + 23;
+16endmodulee
+Listing 4:Example Test Case: dead_code_elimination.
+1module example_raw #
+2(parameter BW = 8)
+3(
+4input [BW-1:0] a,
+5input [BW-1:0] b,
+6input [BW-1:0] c,
+7input [BW-1:0] d,
+8output [BW-1:0] s1
+9);
+10assign s1 = a + 23;
+11endmodule
+12
+Listing 5:Example Test Case: dead_code_elimination after applying the Dead Code Elimination
+AST template.
+1module example_raw
+2#( parameter BW = 8)
+3(
+4input [BW-1:0] a,
+5input [BW-1:0] b,
+6input [BW-1:0] c,
+7input [BW-1:0] d,
+8output [BW-1:0] s1,
+9output [BW-1:0] s2,
+10output [BW-1:0] s3,
+11output [BW-1:0] s4,
+12output [BW-1:0] s5,
+13output [BW-1:0] s6
+14);
+15assign s1 = a + b;
+16assign s2 = a * b;
+17assign s3 = a \% b +d;
+18assign s4 = c + d + b * a;
+19assign s5 = a - b;
+20assign s6 = (b + 1) * a + d + c -b;
+21endmodule
+Listing 6:Example Test Case: subexpression_elimination.
+151module example
+2#( parameter BW = 8)
+3( input [BW-1:0] a,
+4input [BW-1:0] b,
+5input [BW-1:0] c,
+6input [BW-1:0] d,
+7output [BW-1:0] s1,
+8output [BW-1:0] s2,
+9output [BW-1:0] s3,
+10output [BW-1:0] s4,
+11output [BW-1:0] s5,
+12output [BW-1:0] s6
+13);
+14assign s1 = a + b;
+15assign s2 = a * b;
+16assign s3 = a \% b + d;
+17assign s4 = c + d + s2;
+18assign s5 = a - b;
+19assign s6 = s4 + s5;
+20endmodule
+Listing 7:Example Test Case: subexpression_elimination after applying the Common
+Sub-Expressions Elimination template. The Common Sub-Expressions are reused in the states after it.
+1module example_raw
+2#( parameter BW = 8)
+3(
+4input [BW-1:0] a,
+5input [BW-1:0] b,
+6output [BW-1:0] s1,
+7output [BW-1:0] s2
+8);
+9wire [BW-1:0] t1, t2;
+10assign s1 = a + b;
+11assign t1 = s1 + 0;
+12assign t2 = s1 * 1;
+13assign s2 = t1 + t2;
+14endmodule
+15
+Listing 8:Example Test Case: algebraic_simplification.
+1
+2module example_raw #
+3(
+4parameter BW = 8
+5)
+6(
+7input [BW-1:0] a,
+8input [BW-1:0] b,
+9output [BW-1:0] s1,
+10output [BW-1:0] s2
+11);
+12
+13assign s1 = a + b;
+14assign s2 = s1 + s1;
+15
+16endmodule
+Listing 9:Example Test Case: algebraic_simplification after applying the Temporary Variable
+Elimination, Dead Code Elimination, then Expression Simplification templates.
+16C RAG Example
+Sample Retrieval Augmented Optimization Rule
+"name": "Zero Multiplication Elimination",
+"pattern": "Detect multiplication by zero in expressions (e.g.,, 0 * c)",
+"rewrite": "Eliminate multiplication by zero, replacing the entire expression with zero",
+"category": "combinational/dataflow",
+"objective_improvement": "area",
+"template_guidance": "Identify vast.Times nodes with a zero operand. Replace the node with
+a vast.IntConst node representing zero.",
+"function_name": "ZeroMultiplicationTemplate"
+Figure 6: Sample Retrieval Augmented Optimization Rule 1: Zero Multiplication Rule.
+Sample Retrieval Augmented Optimization Rule
+"name": "IntermediateVariableExtraction",
+"pattern": "Detect conditional assignments to a register based on a control signal",
+"rewrite": "Extract common sub-expressions into intermediate variables to reduce redundant
+logic",
+"category": "combinational/dataflow",
+"objective_improvement": "area",
+"template_guidance": "To implement this rule in a Python template subclassing BaseTemplate,
+use pyverilog AST manipulation to identify conditional assignments (vast.IfStatement) and
+extract the common sub-expressions into separate assignments. Look for vast.Identifier nodes
+that are assigned conditionally and create new vast.Assign nodes for the intermediate variables.
+Ensure that the new assignments are placed before the conditional logic to maintain correct data
+flow",
+"function_name": "IntermediateVariableExtractionTemplate"
+Figure 7: Sample Retrieval Augmented Optimization Rule 2: Intermediate Variable Extraction.
+Hardware Optimization Rule
+"name": "ReplaceRippleCarryWithCarryLookahead",
+"pattern": "Detects a ripple carry adder implementation using a series of full adders connected
+in sequence",
+"rewrite": "Transforms the ripple carry adder into a carry lookahead adder by using partial full
+adders and generating carry bits in parallel",
+"category": "combinational/dataflow",
+"objective_improvement": "area, delay",
+"template_guidance": null,
+"function_name": null
+Figure 8: Sample Retrieval Augmented Optimization Rule 3: Replace Ripple Carry with Carry
+Lookahead, no template guidance is needed since it is an abstract rule.
+17

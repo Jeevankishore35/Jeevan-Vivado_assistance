@@ -1,0 +1,27 @@
+{
+  "settings": {
+    "speech_engine": "whisperflow",
+    "whisper_model": "tiny.en",
+    "wake_word": "assistant",
+    "wake_word_required": true,
+    "audio_feedback": true,
+    "gemini_api_key": ""
+  },
+  "custom_commands": [
+    {
+      "phrase": "open github",
+      "action": "url",
+      "target": "https://github.com"
+    },
+    {
+      "phrase": "open stack overflow",
+      "action": "url",
+      "target": "https://stackoverflow.com"
+    },
+    {
+      "phrase": "hello assistant",
+      "action": "speak",
+      "target": "Hello! I am ready to follow your voice commands. What can I do for you?"
+    }
+  ]
+}
